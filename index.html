@@ -59,6 +59,14 @@ button.cam{flex:none}
 .chip{text-align:left;padding:8px 10px}.chip b{display:block;font-size:1.05rem}.chip small{color:var(--mute);font-size:.75rem}
 .chip.sel{border-color:var(--accent);outline:2px solid var(--accent)}
 #camMsg{margin:10px 0 4px;font-weight:600}
+#live{position:fixed;inset:0;background:#000;z-index:60;overflow:hidden}
+#live[hidden]{display:none}
+#live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.liveTop{position:absolute;top:env(safe-area-inset-top,0px);left:0;right:0;display:flex;justify-content:space-between;padding:12px}
+#liveBox{position:absolute;left:5%;right:5%;top:38%;height:16%;border:3px solid #fff;border-radius:10px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+#liveMsg{position:absolute;left:0;right:0;top:calc(54% + 16px);margin:0;text-align:center;color:#fff;font-weight:600;padding:0 16px;text-shadow:0 1px 3px #000}
+input.flash{animation:fl 1.6s}
+@keyframes fl{0%{background:var(--okbg);box-shadow:0 0 0 3px var(--ok)}100%{box-shadow:0 0 0 0 transparent}}
 </style>
 </head>
 <body>
@@ -109,6 +117,12 @@ button.cam{flex:none}
  </div>
 </div>
 <input type="file" id="camFile" accept="image/*" capture="environment" hidden>
+<div id="live" hidden>
+  <video id="liveVid" playsinline muted autoplay></video>
+  <div class="liveTop"><button type="button" id="liveX" class="small">Kapat</button><button type="button" id="liveShot" class="small">Fotoğraftan oku</button></div>
+  <div id="liveBox"></div>
+  <p id="liveMsg"></p>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -189,7 +203,7 @@ names.forEach(k=>$(k).addEventListener('input',calc));
 // kamera
 let camTarget=null;
 function openCam(inp){ camTarget=inp; $('camFile').value=''; $('camFile').click(); }
-document.querySelectorAll('.cam[data-for]').forEach(b=>b.onclick=()=>openCam($(b.dataset.for)));
+document.querySelectorAll('.cam[data-for]').forEach(b=>b.onclick=()=>openLive($(b.dataset.for)));
 async function prep(f){
   const bmp=await createImageBitmap(f), s=1600/Math.max(bmp.width,bmp.height);
   const c=document.createElement('canvas'); c.width=Math.round(bmp.width*s); c.height=Math.round(bmp.height*s);
@@ -237,6 +251,58 @@ $('camFile').onchange=async e=>{
 };
 $('camNo').onclick=()=>{$('sheet').hidden=true;};
 $('camOk').onclick=()=>{ if(camTarget&&$('camVal').value){ camTarget.value=$('camVal').value; camTarget.dispatchEvent(new Event('input')); } $('sheet').hidden=true; };
+// canlı tarama
+const live={on:false,id:0,stream:null,worker:null,last:null};
+async function openLive(inp){
+  camTarget=inp;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.Tesseract){ openCam(inp); return; }
+  $('live').hidden=false; $('liveMsg').textContent='Kamera açılıyor…';
+  try{
+    live.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    const v=$('liveVid'); v.srcObject=live.stream; await v.play();
+    live.on=true; live.last=null; const my=++live.id;
+    $('liveMsg').textContent='Okuma motoru hazırlanıyor…';
+    live.worker=await Tesseract.createWorker('eng',1,{langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int'});
+    await live.worker.setParameters({tessedit_pageseg_mode:'6'});
+    liveLoop(my);
+  }catch(e){ closeLive(); openCam(inp); }
+}
+function closeLive(){
+  live.on=false;
+  if(live.stream){ live.stream.getTracks().forEach(t=>t.stop()); live.stream=null; }
+  if(live.worker){ try{live.worker.terminate();}catch(e){} live.worker=null; }
+  $('live').hidden=true;
+}
+async function liveLoop(my){
+  const v=$('liveVid'), box=$('liveBox');
+  while(live.on&&live.id===my){
+    try{
+      const vw=v.videoWidth, vh=v.videoHeight;
+      if(vw){
+        const vr=v.getBoundingClientRect(), br=box.getBoundingClientRect();
+        const s=Math.max(vr.width/vw,vr.height/vh), ox=(vw*s-vr.width)/2, oy=(vh*s-vr.height)/2;
+        const sx=(br.left-vr.left+ox)/s, sy=(br.top-vr.top+oy)/s, sw=br.width/s, sh=br.height/s;
+        const c=document.createElement('canvas'); c.width=Math.round(sw); c.height=Math.round(sh);
+        c.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
+        const res=await live.worker.recognize(await prep(c));
+        if(!(live.on&&live.id===my)) break;
+        const hit=cands(res.data.text).find(k=>k.p===2);
+        if(hit){
+          if(live.last===hit.v){ liveDone(hit.v); break; }
+          live.last=hit.v; $('liveMsg').textContent='Okundu: '+fmt(hit.v)+' · doğrulanıyor…';
+        }else{ live.last=null; $('liveMsg').textContent='“TOP TUTAR” satırını kutuya getir'; }
+      }
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,150));
+  }
+}
+function liveDone(val){
+  const t=camTarget; closeLive();
+  if(t){ t.value=fmt(val); t.dispatchEvent(new Event('input')); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
+  if(navigator.vibrate) navigator.vibrate(60);
+}
+$('liveX').onclick=closeLive;
+$('liveShot').onclick=()=>{ const t=camTarget; closeLive(); openCam(t); };
 // init
 $('tarih').value = new Date().toISOString().slice(0,10);
 const hr = new Date().getHours();
