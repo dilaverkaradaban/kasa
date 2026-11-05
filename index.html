@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vardiya Kasa Hesabı</title>
+<meta name="theme-color" content="#1f5c43">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<style>
+:root{--bg:#eef0ec;--card:#fff;--ink:#1b2420;--mute:#66726b;--line:#d5dad5;--accent:#1f5c43;--ok:#1f7a4d;--okbg:#e3f3ea;--bad:#b3261e;--badbg:#fbe7e5;--plus:#9a6a00;--plusbg:#fff1cf;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a17;--card:#1e2622;--ink:#eaf0ec;--mute:#93a39a;--line:#33403a;--accent:#5fbf92;--ok:#6fd6a0;--okbg:#17382a;--bad:#ff8a80;--badbg:#44201d;--plus:#f2c35a;--plusbg:#423412}}
+:root[data-theme="dark"]{--bg:#141a17;--card:#1e2622;--ink:#eaf0ec;--mute:#93a39a;--line:#33403a;--accent:#5fbf92;--ok:#6fd6a0;--okbg:#17382a;--bad:#ff8a80;--badbg:#44201d;--plus:#f2c35a;--plusbg:#423412}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:520px;margin:0 auto;padding:16px 14px 40px}
+h1{font-size:1.35rem;margin:4px 0 14px}
+h2{font-size:1rem;margin:0 0 10px;color:var(--accent)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.row:last-child{margin-bottom:0}
+.row label{flex:1;min-width:0}
+input,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+input.num{text-align:right;font-size:1.1rem;font-weight:600}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.num-wrap{width:150px;flex:none}
+.top{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.top .full{grid-column:1/-1}
+.sub{display:flex;justify-content:space-between;padding-top:10px;margin-top:6px;border-top:1px dashed var(--line);font-weight:600}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 14px}
+button.primary{background:var(--accent);color:var(--card);border-color:var(--accent);font-weight:700;width:100%;padding:14px;font-size:1.05rem}
+button.small{padding:8px 10px;flex:none}
+#result{border-radius:10px;padding:18px;text-align:center;margin-bottom:12px;border:2px solid var(--line);background:var(--card)}
+#result .big{font-size:2.4rem;font-weight:800;line-height:1.1}
+#result .lbl{font-size:1.05rem;font-weight:700}
+#result.ok{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+#result.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+#result.plus{background:var(--plusbg);border-color:var(--plus);color:var(--plus)}
+.ab{display:flex;justify-content:space-around;margin-top:10px;font-size:.9rem;color:var(--ink)}
+.ab div{display:flex;flex-direction:column}.ab b{font-size:1.05rem}
+.hist{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
+.hist:last-child{border:0}
+.hist small{color:var(--mute);display:block}
+.tag{font-weight:700;white-space:nowrap}
+.tag.ok{color:var(--ok)}.tag.bad{color:var(--bad)}.tag.plus{color:var(--plus)}
+.empty{color:var(--mute);margin:0}
+.actions{display:flex;gap:8px;margin-bottom:12px}
+.actions button{flex:1}
+button.cam{flex:none}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;padding-top:env(safe-area-inset-top,0px)}
+#sheet[hidden]{display:none}
+.sheetBox{background:var(--card);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));max-height:92%;overflow:auto}
+.sheetBox img{width:100%;max-height:34vh;object-fit:contain;background:var(--bg);border-radius:8px}
+#chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{text-align:left;padding:8px 10px}.chip b{display:block;font-size:1.05rem}.chip small{color:var(--mute);font-size:.75rem}
+.chip.sel{border-color:var(--accent);outline:2px solid var(--accent)}
+#camMsg{margin:10px 0 4px;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Vardiya kasa hesabı</h1>
+
+<section>
+  <div class="top">
+    <label>Tarih<input type="date" id="tarih"></label>
+    <label>Vardiya<select id="vardiya"><option>00-08</option><option>08-16</option><option>16-24</option><option>12 saat gündüz</option><option>12 saat gece</option></select></label>
+    <label class="full">Çalışan<input type="text" id="calisan" placeholder="Adın" autocomplete="name"></label>
+  </div>
+</section>
+
+<section>
+  <div class="row"><label for="oto">Oto</label><button class="small cam" type="button" data-for="oto" aria-label="Oto raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="oto" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="row"><label for="gaz">Gaz</label><button class="small cam" type="button" data-for="gaz" aria-label="Gaz raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="gaz" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="row"><label for="gelen">Gelen para</label><div class="num-wrap"><input class="num" id="gelen" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="sub"><span>A (toplam)</span><span id="aTop">0,00</span></div>
+</section>
+
+<section>
+  <div id="posList"></div>
+  <button class="small" id="posAdd" type="button" style="margin:0 0 12px">+ POS ekle</button>
+  <div class="row"><label for="gider">Gider (toplam)</label><div class="num-wrap"><input class="num" id="gider" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="row"><label for="veresiye">Veresiye (toplam)</label><div class="num-wrap"><input class="num" id="veresiye" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="row"><label for="nakit">Nakit (sayılan)</label><div class="num-wrap"><input class="num" id="nakit" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="sub"><span>B (toplam)</span><span id="bTop">0,00</span></div>
+</section>
+
+<div id="result"><div class="lbl">Hesap bekleniyor</div><div class="big">—</div></div>
+<button class="primary" id="hesapla" type="button">Hesap al ve kaydet</button>
+
+<section style="margin-top:12px">
+  <h2>Geçmiş vardiyalar</h2>
+  <div id="hist"></div>
+</section>
+<div class="actions"><button id="yeni" type="button">Yeni vardiya (formu temizle)</button><button id="sil" type="button">Geçmişi sil</button></div>
+</main>
+
+<div id="sheet" hidden>
+ <div class="sheetBox" role="dialog" aria-modal="true" aria-label="Okunan tutar">
+  <img id="camImg" alt="Çekilen rapor">
+  <p id="camMsg"></p>
+  <div id="chips"></div>
+  <label>Tutar<input class="num" id="camVal" inputmode="decimal" placeholder="0,00"></label>
+  <div class="actions" style="margin:12px 0 0"><button type="button" id="camNo">Vazgeç</button><button type="button" class="primary" id="camOk" style="flex:2;width:auto">Alana yaz</button></div>
+ </div>
+</div>
+<input type="file" id="camFile" accept="image/*" capture="environment" hidden>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function parse(s){
+  s = String(s||'').trim().replace(/\s|₺/g,'');
+  if(!s) return 0;
+  if(s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+  else if(/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g,'');
+  const v = parseFloat(s);
+  return isNaN(v) ? 0 : v;
+}
+const names = ['oto','gaz','gelen','gider','veresiye','nakit'];
+function posVals(){ return [...document.querySelectorAll('.pos')].map(i=>i.value); }
+function addPos(v){
+  const d = document.createElement('div'); d.className='row';
+  const n = document.querySelectorAll('.pos').length+1;
+  d.innerHTML = '<label>POS '+n+'</label><button class="small cam" type="button" aria-label="POS raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num pos" inputmode="decimal" placeholder="0,00" aria-label="POS '+n+'"></div><button class="small del" type="button" aria-label="POS sil">✕</button>';
+  d.querySelector('input').value = v||'';
+  d.querySelector('input').addEventListener('input', calc);
+  d.querySelector('.cam').onclick = ()=>openCam(d.querySelector('input'));
+  d.querySelector('.del').onclick = ()=>{ if(document.querySelectorAll('.pos').length>1){ d.remove(); renumber(); calc(); } };
+  $('posList').appendChild(d);
+}
+function renumber(){ document.querySelectorAll('#posList .row').forEach((r,i)=>{ r.querySelector('label').textContent='POS '+(i+1); }); }
+function compute(){
+  const g = k => parse($(k).value);
+  const a = g('oto')+g('gaz')+g('gelen');
+  const pos = posVals().reduce((s,v)=>s+parse(v),0);
+  const b = pos+g('gider')+g('veresiye')+g('nakit');
+  return {a,b,fark:Math.round((b-a)*100)/100};
+}
+function show(r, final){
+  $('aTop').textContent = fmt(r.a); $('bTop').textContent = fmt(r.b);
+  const el = $('result');
+  if(!final){ return; }
+  let cls='ok', lbl='Kasa tutuyor', big=fmt(0);
+  if(r.fark<0){cls='bad';lbl='Açık var';big='−'+fmt(Math.abs(r.fark))+' ₺';}
+  else if(r.fark>0){cls='plus';lbl='Fazla var';big='+'+fmt(r.fark)+' ₺';}
+  else big='0,00 ₺';
+  el.className = cls;
+  el.innerHTML = '<div class="lbl">'+lbl+'</div><div class="big">'+big+'</div><div class="ab"><div>A<b>'+fmt(r.a)+'</b></div><div>B<b>'+fmt(r.b)+'</b></div></div>';
+}
+function calc(){ show(compute(), false); }
+// storage
+function load(){ try{ return JSON.parse(localStorage.getItem('kasa_gecmis')||'[]'); }catch(e){ return []; } }
+function save(l){ try{ localStorage.setItem('kasa_gecmis', JSON.stringify(l)); }catch(e){} }
+function renderHist(){
+  const l = load(), h = $('hist');
+  if(!l.length){ h.innerHTML='<p class="empty">Henüz kayıt yok. İlk hesabını alınca burada görünür.</p>'; return; }
+  h.innerHTML = '';
+  l.slice().reverse().slice(0,30).forEach(k=>{
+    const cls = k.fark<0?'bad':k.fark>0?'plus':'ok';
+    const t = k.fark<0?'−'+fmt(-k.fark):k.fark>0?'+'+fmt(k.fark):'0,00';
+    const d = document.createElement('div'); d.className='hist';
+    d.innerHTML = '<div><b></b><small></small></div><span class="tag '+cls+'">'+t+' ₺</span>';
+    d.querySelector('b').textContent = k.tarih+' · '+k.vardiya;
+    d.querySelector('small').textContent = (k.calisan||'—')+' · A '+fmt(k.a)+' / B '+fmt(k.b);
+    h.appendChild(d);
+  });
+}
+$('hesapla').onclick = ()=>{
+  const r = compute(); show(r, true);
+  const l = load();
+  l.push({tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,ts:Date.now()});
+  save(l); renderHist();
+  try{ localStorage.setItem('kasa_calisan',$('calisan').value); }catch(e){}
+  $('result').scrollIntoView({behavior:'smooth',block:'center'});
+};
+$('yeni').onclick = ()=>{
+  names.forEach(k=>$(k).value=''); $('posList').innerHTML=''; addPos();
+  $('result').className=''; $('result').innerHTML='<div class="lbl">Hesap bekleniyor</div><div class="big">—</div>';
+  calc(); window.scrollTo({top:0,behavior:'smooth'});
+};
+$('sil').onclick = ()=>{ if(confirm('Tüm geçmiş silinsin mi?')){ save([]); renderHist(); } };
+$('posAdd').onclick = ()=>addPos();
+names.forEach(k=>$(k).addEventListener('input',calc));
+// kamera
+let camTarget=null;
+function openCam(inp){ camTarget=inp; $('camFile').value=''; $('camFile').click(); }
+document.querySelectorAll('.cam[data-for]').forEach(b=>b.onclick=()=>openCam($(b.dataset.for)));
+async function prep(f){
+  const bmp=await createImageBitmap(f), s=1600/Math.max(bmp.width,bmp.height);
+  const c=document.createElement('canvas'); c.width=Math.round(bmp.width*s); c.height=Math.round(bmp.height*s);
+  const x=c.getContext('2d'); x.drawImage(bmp,0,0,c.width,c.height);
+  const im=x.getImageData(0,0,c.width,c.height), d=im.data, h=new Array(256).fill(0);
+  for(let i=0;i<d.length;i+=4){const g=(d[i]*.3+d[i+1]*.59+d[i+2]*.11)|0; d[i]=g; h[g]++;}
+  const n=c.width*c.height; let lo=0,hi=255,a=0;
+  while(lo<255&&(a+=h[lo])<n*.02)lo++; a=0; while(hi>0&&(a+=h[hi])<n*.02)hi--;
+  const r=Math.max(hi-lo,1);
+  for(let i=0;i<d.length;i+=4){const v=Math.max(0,Math.min(255,((d[i]-lo)/r)*255)); d[i]=d[i+1]=d[i+2]=v;}
+  x.putImageData(im,0,0); return c;
+}
+const KEY=/TOPLAM|TOTAL|GENEL|SATI[SŞ]|TUTAR|NAK[Iİ]T|KART/i;
+function cands(text){
+  const out=[],seen=new Map(),re=/\d[\d.,\s]*[.,]\d{2}(?!\d)/g;
+  text.split('\n').forEach(l=>{ (l.match(re)||[]).forEach(m=>{
+    const t=m.trim(), v=parseFloat(t.slice(0,-3).replace(/\D/g,'')+'.'+t.slice(-2));
+    if(isNaN(v)||v<=0) return; const p=(/T[O0P]P\s*TUTAR/i.test(l)&&!/[İI1l]ND/i.test(l))?2:KEY.test(l)?1:0; const o=seen.get(v); if(o){ if(p>o.p) o.p=p; return; } const k={v,p,i:out.length,l:l.replace(re,'').replace(/\*/g,'').trim().slice(0,24)}; seen.set(v,k); out.push(k);
+  });});
+  return out.sort((a,b)=>(b.p-a.p)||(a.p===2?a.i-b.i:b.v-a.v)).slice(0,8);
+}
+function sheet(msg,list){
+  $('camMsg').textContent=msg; const c=$('chips'); c.innerHTML='';
+  (list||[]).forEach(k=>{ const b=document.createElement('button'); b.type='button'; b.className='chip';
+    b.innerHTML='<b></b><small></small>'; b.firstChild.textContent=fmt(k.v); b.lastChild.textContent=k.l||'';
+    b.onclick=()=>{ $('camVal').value=fmt(k.v); c.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
+    c.appendChild(b); });
+  if(list&&list.length){ $('camVal').value=fmt(list[0].v); c.firstChild.classList.add('sel'); } else $('camVal').value='';
+}
+$('camFile').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $('camImg').src=URL.createObjectURL(f); $('camVal').value=''; $('chips').innerHTML='';
+  $('camMsg').textContent='Okunuyor…'; $('sheet').hidden=false;
+  try{
+    if(!window.Tesseract) throw 0;
+    const run=(async()=>{
+      const cv=await prep(f);
+      const w=await Tesseract.createWorker('eng',1,{langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int',logger:m=>{ if(m.status==='recognizing text') $('camMsg').textContent='Okunuyor %'+Math.round(m.progress*100); }});
+      const res=await w.recognize(cv); w.terminate(); return res;
+    })();
+    const res=await Promise.race([run,new Promise((_,j)=>setTimeout(j,60000))]);
+    const l=cands(res.data.text);
+    sheet(l.length?(l[0].p===2?'“TOP TUTAR” satırından okudum. Doğruysa Alana yaz.':'Doğru tutarı seç ya da düzelt.'):'Tutar bulunamadı. Fotoğrafı görüp elle yaz.',l);
+  }catch(err){ sheet('Okuma çalışmadı. Fotoğrafı görüp tutarı elle yazabilirsin.',[]); }
+};
+$('camNo').onclick=()=>{$('sheet').hidden=true;};
+$('camOk').onclick=()=>{ if(camTarget&&$('camVal').value){ camTarget.value=$('camVal').value; camTarget.dispatchEvent(new Event('input')); } $('sheet').hidden=true; };
+// init
+$('tarih').value = new Date().toISOString().slice(0,10);
+const hr = new Date().getHours();
+$('vardiya').value = hr<8?'00-08':hr<16?'08-16':'16-24';
+try{ $('calisan').value = localStorage.getItem('kasa_calisan')||''; }catch(e){}
+addPos(); calc(); renderHist();
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
