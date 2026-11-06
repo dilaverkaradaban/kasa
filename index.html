@@ -63,7 +63,7 @@ button.cam{flex:none}
 #live[hidden]{display:none}
 #live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .liveTop{position:absolute;top:env(safe-area-inset-top,0px);left:0;right:0;display:flex;justify-content:space-between;padding:12px}
-#liveBox{position:absolute;left:5%;right:5%;top:38%;height:16%;border:3px solid #fff;border-radius:10px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+#liveBox{position:absolute;left:5%;right:5%;top:38%;height:5%;border:3px solid #fff;border-radius:10px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
 #liveMsg{position:absolute;left:0;right:0;top:calc(54% + 16px);margin:0;text-align:center;color:#fff;font-weight:600;padding:0 16px;text-shadow:0 1px 3px #000}
 input.flash{animation:fl 1.6s}
 @keyframes fl{0%{background:var(--okbg);box-shadow:0 0 0 3px var(--ok)}100%{box-shadow:0 0 0 0 transparent}}
@@ -143,7 +143,7 @@ function addPos(v){
   d.innerHTML = '<label>POS '+n+'</label><button class="small cam" type="button" aria-label="POS raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num pos" inputmode="decimal" placeholder="0,00" aria-label="POS '+n+'"></div><button class="small del" type="button" aria-label="POS sil">✕</button>';
   d.querySelector('input').value = v||'';
   d.querySelector('input').addEventListener('input', calc);
-  d.querySelector('.cam').onclick = ()=>openCam(d.querySelector('input'));
+  d.querySelector('.cam').onclick = ()=>openLive(d.querySelector('input'));
   d.querySelector('.del').onclick = ()=>{ if(document.querySelectorAll('.pos').length>1){ d.remove(); renumber(); calc(); } };
   $('posList').appendChild(d);
 }
@@ -217,13 +217,26 @@ async function prep(f){
   x.putImageData(im,0,0); return c;
 }
 const KEY=/TOPLAM|TOTAL|GENEL|SATI[SŞ]|TUTAR|NAK[Iİ]T|KART/i;
+const AMT=/\d{1,3}(?:[.,]\d{3})*[.,]\d{2}(?!\d)|\d+[.,]\d{2}(?!\d)/g;
+const GT=/GENEL\s*T[O0]PL[AM][MN]/i;
+// p=3: "GENEL TOPLAM" yazısından sonraki ilk tutar (POS günsonu), p=2: "TOP TUTAR" satırı (yazarkasa Z), p=1: anahtar kelimeli satır
 function cands(text){
-  const out=[],seen=new Map(),re=/\d[\d.,\s]*[.,]\d{2}(?!\d)/g;
-  text.split('\n').forEach(l=>{ (l.match(re)||[]).forEach(m=>{
-    const t=m.trim(), v=parseFloat(t.slice(0,-3).replace(/\D/g,'')+'.'+t.slice(-2));
-    if(isNaN(v)||v<=0) return; const p=(/T[O0P]P\s*TUTAR/i.test(l)&&!/[İI1l]ND/i.test(l))?2:KEY.test(l)?1:0; const o=seen.get(v); if(o){ if(p>o.p) o.p=p; return; } const k={v,p,i:out.length,l:l.replace(re,'').replace(/\*/g,'').trim().slice(0,24)}; seen.set(v,k); out.push(k);
-  });});
-  return out.sort((a,b)=>(b.p-a.p)||(a.p===2?a.i-b.i:b.v-a.v)).slice(0,8);
+  const lines=text.split('\n').map(l=>l.replace(/([.,])[ \t]+(?=\d)/g,'$1').replace(/(\d)[ \t]+(?=[.,]\d)/g,'$1'));
+  const out=[],seen=new Map(); let gtLine=-9, gtOpen=false;
+  lines.forEach((l,n)=>{
+    if(GT.test(l)){ gtLine=n; gtOpen=true; }
+    (l.match(AMT)||[]).forEach(m=>{
+      const v=parseFloat(m.slice(0,-3).replace(/\D/g,'')+'.'+m.slice(-2));
+      if(isNaN(v)||v<=0) return;
+      let p=KEY.test(l)?1:0;
+      if(/T[O0P]P\s*TUTAR/i.test(l)&&!/[İI1l]ND/i.test(l)) p=2;
+      if(gtOpen&&n-gtLine<=3){ p=3; gtOpen=false; }
+      const o=seen.get(v); if(o){ if(p>o.p) o.p=p; return; }
+      const k={v,p,i:out.length,l:l.replace(AMT,'').replace(/[*]/g,'').trim().slice(0,24)};
+      seen.set(v,k); out.push(k);
+    });
+  });
+  return out.sort((a,b)=>(b.p-a.p)||(a.p>=2?a.i-b.i:b.v-a.v)).slice(0,8);
 }
 function sheet(msg,list){
   $('camMsg').textContent=msg; const c=$('chips'); c.innerHTML='';
@@ -246,7 +259,7 @@ $('camFile').onchange=async e=>{
     })();
     const res=await Promise.race([run,new Promise((_,j)=>setTimeout(j,60000))]);
     const l=cands(res.data.text);
-    sheet(l.length?(l[0].p===2?'“TOP TUTAR” satırından okudum. Doğruysa Alana yaz.':'Doğru tutarı seç ya da düzelt.'):'Tutar bulunamadı. Fotoğrafı görüp elle yaz.',l);
+    sheet(l.length?(l[0].p>=2?'Başlık satırından okudum. Doğruysa Alana yaz.':'Doğru tutarı seç ya da düzelt.'):'Tutar bulunamadı. Fotoğrafı görüp elle yaz.',l);
   }catch(err){ sheet('Okuma çalışmadı. Fotoğrafı görüp tutarı elle yazabilirsin.',[]); }
 };
 $('camNo').onclick=()=>{$('sheet').hidden=true;};
@@ -256,6 +269,8 @@ const live={on:false,id:0,stream:null,worker:null,last:null};
 async function openLive(inp){
   camTarget=inp;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.Tesseract){ openCam(inp); return; }
+  const pos=inp.classList.contains('pos'); live.hint=pos?'“GENEL TOPLAM” ve tutarı kutuya getir':'“TOP TUTAR” satırını kutuya getir';
+  $('liveBox').style.height=pos?'26%':'5%'; $('liveMsg').style.top='calc('+(38+(pos?26:5))+'% + 14px)';
   $('live').hidden=false; $('liveMsg').textContent='Kamera açılıyor…';
   try{
     live.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
@@ -286,11 +301,11 @@ async function liveLoop(my){
         c.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
         const res=await live.worker.recognize(await prep(c));
         if(!(live.on&&live.id===my)) break;
-        const hit=cands(res.data.text).find(k=>k.p===2);
+        const hit=cands(res.data.text).find(k=>k.p>=2);
         if(hit){
           if(live.last===hit.v){ liveDone(hit.v); break; }
           live.last=hit.v; $('liveMsg').textContent='Okundu: '+fmt(hit.v)+' · doğrulanıyor…';
-        }else{ live.last=null; $('liveMsg').textContent='“TOP TUTAR” satırını kutuya getir'; }
+        }else{ live.last=null; $('liveMsg').textContent=live.hint; }
       }
     }catch(e){}
     await new Promise(r=>setTimeout(r,150));
