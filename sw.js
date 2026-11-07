@@ -1,5 +1,5 @@
 // Sayfada değişiklik yaptığında aşağıdaki sürümü artır (v2, v3...), telefonlar yeni dosyayı alsın.
-const CACHE = 'kasa-v5';
+const CACHE = 'kasa-v6';
 const FILES = ['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
@@ -14,6 +14,8 @@ self.addEventListener('activate', e => {
 // Kendi dosyalarımız ve kamera okuma motoru (CDN) ilk kullanımdan sonra internetsiz de çalışsın.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  const u0 = new URL(e.request.url);
+  if (u0.origin !== location.origin && u0.hostname !== 'cdn.jsdelivr.net') return;
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
       const url = new URL(e.request.url);

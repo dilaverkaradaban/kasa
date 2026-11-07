@@ -67,6 +67,10 @@ button.cam{flex:none}
 #liveMsg{position:absolute;left:0;right:0;top:calc(54% + 16px);margin:0;text-align:center;color:#fff;font-weight:600;padding:0 16px;text-shadow:0 1px 3px #000}
 input.flash{animation:fl 1.6s}
 @keyframes fl{0%{background:var(--okbg);box-shadow:0 0 0 3px var(--ok)}100%{box-shadow:0 0 0 0 transparent}}
+.seg{display:flex;gap:8px}
+.seg button{flex:1;padding:14px 0;font-size:1.3rem;font-weight:800}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--card);border-color:var(--accent)}
+.lbl{display:block;font-size:.85rem;color:var(--mute);margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -77,7 +81,7 @@ input.flash{animation:fl 1.6s}
   <div class="top">
     <label>Tarih<input type="date" id="tarih"></label>
     <label>Vardiya<select id="vardiya"><option>00-08</option><option>08-16</option><option>16-24</option><option>12 saat gündüz</option><option>12 saat gece</option></select></label>
-    <label class="full">Çalışan<input type="text" id="calisan" placeholder="Adın" autocomplete="name"></label>
+    <div class="full"><span class="lbl">Çalışan</span><div class="seg" id="calisanSeg" role="group" aria-label="Çalışan"><button type="button" data-v="İ">İ</button><button type="button" data-v="T">T</button><button type="button" data-v="D">D</button></div><input type="hidden" id="calisan"></div>
   </div>
 </section>
 
@@ -102,6 +106,8 @@ input.flash{animation:fl 1.6s}
 
 <section style="margin-top:12px">
   <h2>Geçmiş vardiyalar</h2>
+  <div class="row"><button class="small" id="syncBtn" type="button">Eşitle</button><button class="small" id="tokBtn" type="button">Anahtar gir</button></div>
+  <p id="syncSt" class="empty" style="margin:0 0 8px"></p>
   <div id="hist"></div>
 </section>
 <div class="actions"><button id="yeni" type="button">Yeni vardiya (formu temizle)</button><button id="sil" type="button">Geçmişi sil</button></div>
@@ -171,24 +177,25 @@ function calc(){ show(compute(), false); }
 function load(){ try{ return JSON.parse(localStorage.getItem('kasa_gecmis')||'[]'); }catch(e){ return []; } }
 function save(l){ try{ localStorage.setItem('kasa_gecmis', JSON.stringify(l)); }catch(e){} }
 function renderHist(){
-  const l = load(), h = $('hist');
-  if(!l.length){ h.innerHTML='<p class="empty">Henüz kayıt yok. İlk hesabını alınca burada görünür.</p>'; return; }
-  h.innerHTML = '';
-  l.slice().reverse().slice(0,30).forEach(k=>{
-    const cls = k.fark<0?'bad':k.fark>0?'plus':'ok';
-    const t = k.fark<0?'−'+fmt(-k.fark):k.fark>0?'+'+fmt(k.fark):'0,00';
-    const d = document.createElement('div'); d.className='hist';
-    d.innerHTML = '<div><b></b><small></small></div><span class="tag '+cls+'">'+t+' ₺</span>';
-    d.querySelector('b').textContent = k.tarih+' · '+k.vardiya;
-    d.querySelector('small').textContent = (k.calisan||'—')+' · A '+fmt(k.a)+' / B '+fmt(k.b);
+  const l=load().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)), h=$('hist');
+  if(!l.length){ h.innerHTML='<p class="empty">Henüz kayıt yok.</p>'; return; }
+  h.innerHTML='';
+  l.slice(0,40).forEach(k=>{
+    const cls=k.fark<0?'bad':k.fark>0?'plus':'ok';
+    const t=k.fark<0?'−'+fmt(-k.fark):k.fark>0?'+'+fmt(k.fark):'0,00';
+    const d=document.createElement('div'); d.className='hist';
+    d.innerHTML='<div><b></b><small></small></div><span class="tag '+cls+'">'+t+' ₺</span>';
+    d.querySelector('b').textContent=k.tarih+' · '+k.vardiya+' · '+(k.calisan||'—');
+    d.querySelector('small').textContent='A '+fmt(k.a)+' / B '+fmt(k.b)+(k.s?'':' · gönderilmedi');
     h.appendChild(d);
   });
 }
 $('hesapla').onclick = ()=>{
+  if(!$('calisan').value){ alert('Önce çalışanı seç (İ, T, D).'); return; }
   const r = compute(); show(r, true);
   const l = load();
-  l.push({tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,ts:Date.now()});
-  save(l); renderHist();
+  l.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,ts:Date.now(),s:false});
+  save(l); renderHist(); sync();
   try{ localStorage.setItem('kasa_calisan',$('calisan').value); }catch(e){}
   $('result').scrollIntoView({behavior:'smooth',block:'center'});
 };
@@ -197,14 +204,23 @@ $('yeni').onclick = ()=>{
   $('result').className=''; $('result').innerHTML='<div class="lbl">Hesap bekleniyor</div><div class="big">—</div>';
   calc(); window.scrollTo({top:0,behavior:'smooth'});
 };
-$('sil').onclick = ()=>{ if(confirm('Tüm geçmiş silinsin mi?')){ save([]); renderHist(); } };
 $('posAdd').onclick = ()=>addPos();
 names.forEach(k=>$(k).addEventListener('input',calc));
 // kamera
 let camTarget=null;
 function openCam(inp){ camTarget=inp; $('camFile').value=''; $('camFile').click(); }
 document.querySelectorAll('.cam[data-for]').forEach(b=>b.onclick=()=>openLive($(b.dataset.for)));
-async function prep(f){
+// adaptif eşikleme (Bradley): her piksel, çevresindeki ortalamadan belirgin koyuysa siyah, değilse beyaz
+function adaptive(d,w,h,s,t){
+  const W=w+1, I=new Float64Array(W*(h+1));
+  for(let y=0;y<h;y++){ let row=0; for(let x=0;x<w;x++){ row+=d[(y*w+x)*4]; I[(y+1)*W+x+1]=I[y*W+x+1]+row; } }
+  const r=s>>1;
+  for(let y=0;y<h;y++){ const y1=Math.max(0,y-r), y2=Math.min(h-1,y+r);
+    for(let x=0;x<w;x++){ const x1=Math.max(0,x-r), x2=Math.min(w-1,x+r);
+      const sum=I[(y2+1)*W+x2+1]-I[y1*W+x2+1]-I[(y2+1)*W+x1]+I[y1*W+x1];
+      const i=(y*w+x)*4, v=d[i]*(x2-x1+1)*(y2-y1+1)<sum*(1-t)?0:255; d[i]=d[i+1]=d[i+2]=v; } }
+}
+async function prep(f,bin){
   const bmp=await createImageBitmap(f), s=1600/Math.max(bmp.width,bmp.height);
   const c=document.createElement('canvas'); c.width=Math.round(bmp.width*s); c.height=Math.round(bmp.height*s);
   const x=c.getContext('2d'); x.drawImage(bmp,0,0,c.width,c.height);
@@ -214,6 +230,7 @@ async function prep(f){
   while(lo<255&&(a+=h[lo])<n*.02)lo++; a=0; while(hi>0&&(a+=h[hi])<n*.02)hi--;
   const r=Math.max(hi-lo,1);
   for(let i=0;i<d.length;i+=4){const v=Math.max(0,Math.min(255,((d[i]-lo)/r)*255)); d[i]=d[i+1]=d[i+2]=v;}
+  if(bin) adaptive(d,c.width,c.height,Math.round(c.width/24),0.15);
   x.putImageData(im,0,0); return c;
 }
 const KEY=/TOPLAM|TOTAL|GENEL|SATI[SŞ]|TUTAR|NAK[Iİ]T|KART/i;
@@ -253,9 +270,11 @@ $('camFile').onchange=async e=>{
   try{
     if(!window.Tesseract) throw 0;
     const run=(async()=>{
-      const cv=await prep(f);
+      const cv=await prep(f,true);
       const w=await Tesseract.createWorker('eng',1,{langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int',logger:m=>{ if(m.status==='recognizing text') $('camMsg').textContent='Okunuyor %'+Math.round(m.progress*100); }});
-      const res=await w.recognize(cv); w.terminate(); return res;
+      let res=await w.recognize(cv); const l1=cands(res.data.text);
+      if(!(l1[0]&&l1[0].p>=2)){ const r2=await w.recognize(await prep(f,false)); const l2=cands(r2.data.text); if(l2[0]&&l2[0].p>=2) res=r2; }
+      w.terminate(); return res;
     })();
     const res=await Promise.race([run,new Promise((_,j)=>setTimeout(j,60000))]);
     const l=cands(res.data.text);
@@ -265,7 +284,7 @@ $('camFile').onchange=async e=>{
 $('camNo').onclick=()=>{$('sheet').hidden=true;};
 $('camOk').onclick=()=>{ if(camTarget&&$('camVal').value){ camTarget.value=$('camVal').value; camTarget.dispatchEvent(new Event('input')); } $('sheet').hidden=true; };
 // canlı tarama
-const live={on:false,id:0,stream:null,worker:null,last:null};
+const live={on:false,id:0,stream:null,worker:null,last:null,fr:0,miss:0,hint:''};
 async function openLive(inp){
   camTarget=inp;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.Tesseract){ openCam(inp); return; }
@@ -299,13 +318,13 @@ async function liveLoop(my){
         const sx=(br.left-vr.left+ox)/s, sy=(br.top-vr.top+oy)/s, sw=br.width/s, sh=br.height/s;
         const c=document.createElement('canvas'); c.width=Math.round(sw); c.height=Math.round(sh);
         c.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
-        const res=await live.worker.recognize(await prep(c));
+        const res=await live.worker.recognize(await prep(c,(live.fr++%2)===0));
         if(!(live.on&&live.id===my)) break;
         const hit=cands(res.data.text).find(k=>k.p>=2);
         if(hit){
           if(live.last===hit.v){ liveDone(hit.v); break; }
-          live.last=hit.v; $('liveMsg').textContent='Okundu: '+fmt(hit.v)+' · doğrulanıyor…';
-        }else{ live.last=null; $('liveMsg').textContent=live.hint; }
+          live.miss=0; live.last=hit.v; $('liveMsg').textContent='Okundu: '+fmt(hit.v)+' · doğrulanıyor…';
+        }else if(++live.miss>=3){ live.last=null; live.miss=0; $('liveMsg').textContent=live.hint; }
       }
     }catch(e){}
     await new Promise(r=>setTimeout(r,150));
@@ -318,12 +337,84 @@ function liveDone(val){
 }
 $('liveX').onclick=closeLive;
 $('liveShot').onclick=()=>{ const t=camTarget; closeLive(); openCam(t); };
+// paylaşılan geçmiş (GitHub deposundaki data/kayitlar.json)
+function gh(){
+  try{ const o=localStorage.getItem('kasa_repo'); if(o){ const a=o.split('/'); return {o:a[0],r:a[1]}; } }catch(e){}
+  const h=location.hostname; if(!h.endsWith('.github.io')) return null;
+  const s=location.pathname.split('/')[1]; return {o:h.split('.')[0],r:(s&&!s.includes('.'))?s:h};
+}
+function tok(){ try{ return localStorage.getItem('kasa_token')||''; }catch(e){ return ''; } }
+function setSt(m){ const e=$('syncSt'); if(e) e.textContent=m; }
+function ghUrl(){ const g=gh(); return 'https://api.github.com/repos/'+g.o+'/'+g.r+'/contents/data/kayitlar.json'; }
+function ghHead(){ const h={Accept:'application/vnd.github+json'}; if(tok()) h.Authorization='Bearer '+tok(); return h; }
+async function ghGet(){
+  const r=await fetch(ghUrl(),{headers:ghHead(),cache:'no-store'});
+  if(r.status===404) return {list:[],sha:null};
+  if(!r.ok) throw Object.assign(new Error('get'),{status:r.status});
+  const j=await r.json();
+  const txt=new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+  return {list:JSON.parse(txt||'[]'),sha:j.sha};
+}
+async function ghPut(list,sha){
+  const bytes=new TextEncoder().encode(JSON.stringify(list)); let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+  const body={message:'kasa kaydı',content:btoa(bin)}; if(sha) body.sha=sha;
+  const h=ghHead(); h['Content-Type']='application/json';
+  const r=await fetch(ghUrl(),{method:'PUT',headers:h,body:JSON.stringify(body)});
+  if(!r.ok) throw Object.assign(new Error('put'),{status:r.status});
+}
+function loadFix(){ return load().map(k=>k.id?k:Object.assign({},k,{id:(k.ts||0)+'-'+Math.random().toString(36).slice(2,6)})); }
+let syncing=false;
+async function sync(){
+  if(syncing) return;
+  if(!gh()){ setSt('Paylaşım yalnızca GitHub adresinde çalışır.'); return; }
+  syncing=true; setSt('Eşitleniyor…');
+  try{
+    for(let n=0;n<3;n++){
+      const rem=await ghGet(), ids=new Set(rem.list.map(k=>k.id));
+      const un=loadFix().filter(k=>!k.s&&!ids.has(k.id)).map(k=>({id:k.id,tarih:k.tarih,vardiya:k.vardiya,calisan:k.calisan,a:k.a,b:k.b,fark:k.fark,ts:k.ts}));
+      const mark=(l,s)=>l.map(k=>Object.assign({},k,{s:s}));
+      if(un.length&&tok()){
+        try{ const all=rem.list.concat(un); await ghPut(all,rem.sha); save(mark(all,true)); break; }
+        catch(e){ if(e.status===409||e.status===422) continue; throw e; }
+      }else{ save(mark(rem.list,true).concat(mark(un,false))); break; }
+    }
+    const nu=load().filter(k=>!k.s).length;
+    setSt(tok()?(nu?nu+' kayıt gönderilemedi, sonra tekrar denenecek.':'Paylaşılan geçmiş güncel.'):(nu?nu+' kayıt yalnızca bu telefonda. Göndermek için “Anahtar gir”.':'Yalnızca okuma. Kayıt göndermek için “Anahtar gir”.'));
+  }catch(e){ setSt(e.status===401||e.status===403?'GitHub anahtarı geçersiz ya da yetkisiz.':'Eşitlenemedi. Kayıtlar telefonda duruyor.'); }
+  syncing=false; renderHist();
+}
+const PIN_HASH='bb83c0fc55a8cd90425481c198a3111ebe040a57829be5d57a6b98236b324b41';
+async function sha(s){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+$('sil').onclick=async()=>{
+  const pin=prompt('Geçmişi silmek için 4 haneli PIN'); if(pin===null) return;
+  let ok=false; try{ ok=(await sha('kasa:'+pin.trim()))===PIN_HASH; }catch(e){}
+  if(!ok){ alert('PIN yanlış.'); return; }
+  if(!confirm('Tüm geçmiş (herkesin gördüğü liste dahil) silinsin mi?')) return;
+  if(gh()){
+    if(!tok()){ alert('Paylaşılan geçmişi silmek için önce “Anahtar gir” ile GitHub anahtarını ekle.'); return; }
+    try{ const r=await ghGet(); if(r.sha) await ghPut([],r.sha); }catch(e){ alert('GitHub’da silinemedi, kayıtlar silinmedi.'); return; }
+  }
+  save([]); renderHist(); setSt('Geçmiş silindi.');
+};
+$('syncBtn').onclick=sync;
+function tokLbl(){ $('tokBtn').textContent=tok()?'Anahtarı değiştir':'Anahtar gir'; }
+$('tokBtn').onclick=()=>{
+  const t=prompt('GitHub anahtarını (token) yapıştır. Boş bırakırsan kaldırılır.',''); if(t===null) return;
+  try{ if(t.trim()) localStorage.setItem('kasa_token',t.trim()); else localStorage.removeItem('kasa_token'); }catch(e){}
+  tokLbl(); sync();
+};
+function syncSeg(){ document.querySelectorAll('#calisanSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===$('calisan').value)); }
+document.querySelectorAll('#calisanSeg button').forEach(b=>b.onclick=()=>{ $('calisan').value=b.dataset.v; syncSeg(); });
+window.addEventListener('online',sync);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) sync(); });
+tokLbl();
 // init
 $('tarih').value = new Date().toISOString().slice(0,10);
 const hr = new Date().getHours();
 $('vardiya').value = hr<8?'00-08':hr<16?'08-16':'16-24';
 try{ $('calisan').value = localStorage.getItem('kasa_calisan')||''; }catch(e){}
-addPos(); calc(); renderHist();
+syncSeg();
+addPos(); calc(); renderHist(); sync();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
