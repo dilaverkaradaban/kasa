@@ -1,5 +1,5 @@
 // Sayfada değişiklik yaptığında aşağıdaki sürümü artır (v2, v3...), telefonlar yeni dosyayı alsın.
-const CACHE = 'kasa-v7';
+const CACHE = 'kasa-v8';
 const FILES = ['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png','./icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
