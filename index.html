@@ -81,7 +81,7 @@ input.flash{animation:fl 1.6s}
   <div class="top">
     <label>Tarih<input type="date" id="tarih"></label>
     <label>Vardiya<select id="vardiya"><option>00-08</option><option>08-16</option><option>16-24</option><option>12 saat gündüz</option><option>12 saat gece</option></select></label>
-    <div class="full"><span class="lbl">Çalışan</span><div class="seg" id="calisanSeg" role="group" aria-label="Çalışan"><button type="button" data-v="İ">İ</button><button type="button" data-v="T">T</button><button type="button" data-v="D">D</button></div><input type="hidden" id="calisan"></div>
+    <label class="full">Çalışan<select id="calisan"><option value="">Seçiniz</option><option>İ</option><option>T</option><option>D</option></select></label>
   </div>
 </section>
 
@@ -150,7 +150,7 @@ function addPos(v){
   d.querySelector('input').value = v||'';
   d.querySelector('input').addEventListener('input', calc);
   d.querySelector('.cam').onclick = ()=>openLive(d.querySelector('input'));
-  d.querySelector('.del').onclick = ()=>{ if(document.querySelectorAll('.pos').length>1){ d.remove(); renumber(); calc(); } };
+  d.querySelector('.del').onclick = ()=>{ if(document.querySelectorAll('.pos').length>1){ d.remove(); renumber(); calc(); saveDraft(); } };
   $('posList').appendChild(d);
 }
 function renumber(){ document.querySelectorAll('#posList .row').forEach((r,i)=>{ r.querySelector('label').textContent='POS '+(i+1); }); }
@@ -195,16 +195,18 @@ $('hesapla').onclick = ()=>{
   const r = compute(); show(r, true);
   const l = load();
   l.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,ts:Date.now(),s:false});
-  save(l); renderHist(); sync();
+  save(l); renderHist(); sync(); hDone=true; saveDraft();
   try{ localStorage.setItem('kasa_calisan',$('calisan').value); }catch(e){}
   $('result').scrollIntoView({behavior:'smooth',block:'center'});
 };
 $('yeni').onclick = ()=>{
   names.forEach(k=>$(k).value=''); $('posList').innerHTML=''; addPos();
+  hDone=false; try{ localStorage.removeItem('kasa_taslak'); }catch(e){}
+  $('tarih').value=today(); { const h=new Date().getHours(); $('vardiya').value=h<8?'00-08':h<16?'08-16':'16-24'; }
   $('result').className=''; $('result').innerHTML='<div class="lbl">Hesap bekleniyor</div><div class="big">—</div>';
   calc(); window.scrollTo({top:0,behavior:'smooth'});
 };
-$('posAdd').onclick = ()=>addPos();
+$('posAdd').onclick = ()=>{ addPos(); saveDraft(); };
 names.forEach(k=>$(k).addEventListener('input',calc));
 // kamera
 let camTarget=null;
@@ -282,7 +284,7 @@ $('camFile').onchange=async e=>{
   }catch(err){ sheet('Okuma çalışmadı. Fotoğrafı görüp tutarı elle yazabilirsin.',[]); }
 };
 $('camNo').onclick=()=>{$('sheet').hidden=true;};
-$('camOk').onclick=()=>{ if(camTarget&&$('camVal').value){ camTarget.value=$('camVal').value; camTarget.dispatchEvent(new Event('input')); } $('sheet').hidden=true; };
+$('camOk').onclick=()=>{ if(camTarget&&$('camVal').value){ camTarget.value=$('camVal').value; camTarget.dispatchEvent(new Event('input',{bubbles:true})); } $('sheet').hidden=true; };
 // canlı tarama
 const live={on:false,id:0,stream:null,worker:null,last:null,fr:0,miss:0,hint:''};
 async function openLive(inp){
@@ -332,7 +334,7 @@ async function liveLoop(my){
 }
 function liveDone(val){
   const t=camTarget; closeLive();
-  if(t){ t.value=fmt(val); t.dispatchEvent(new Event('input')); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
+  if(t){ t.value=fmt(val); t.dispatchEvent(new Event('input',{bubbles:true})); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
   if(navigator.vibrate) navigator.vibrate(60);
 }
 $('liveX').onclick=closeLive;
@@ -403,18 +405,35 @@ $('tokBtn').onclick=()=>{
   try{ if(t.trim()) localStorage.setItem('kasa_token',t.trim()); else localStorage.removeItem('kasa_token'); }catch(e){}
   tokLbl(); sync();
 };
-function syncSeg(){ document.querySelectorAll('#calisanSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===$('calisan').value)); }
-document.querySelectorAll('#calisanSeg button').forEach(b=>b.onclick=()=>{ $('calisan').value=b.dataset.v; syncSeg(); });
 window.addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) sync(); });
 tokLbl();
+// taslak: form değerleri telefonda saklanır, uygulama arka planda kapansa da kaybolmaz
+let hDone=false;
+const DRAFT_F=['tarih','vardiya','calisan','oto','gaz','gelen','gider','veresiye','nakit'];
+function today(){ const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'); }
+function saveDraft(){
+  try{ const d={pos:posVals(),h:hDone,t:Date.now()}; DRAFT_F.forEach(k=>d[k]=$(k).value); localStorage.setItem('kasa_taslak',JSON.stringify(d)); }catch(e){}
+}
+function restoreDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem('kasa_taslak')||'null');
+    if(!d||Date.now()-(d.t||0)>14*3600*1000) return;
+    DRAFT_F.forEach(k=>{ if(d[k]) $(k).value=d[k]; });
+    $('posList').innerHTML=''; (d.pos&&d.pos.length?d.pos:['']).forEach(v=>addPos(v));
+    calc(); if(d.h){ hDone=true; show(compute(),true); }
+  }catch(e){}
+}
+document.addEventListener('input',()=>{ hDone=false; saveDraft(); });
+document.addEventListener('change',saveDraft);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveDraft(); });
+window.addEventListener('pagehide',saveDraft);
 // init
-$('tarih').value = new Date().toISOString().slice(0,10);
+$('tarih').value = today();
 const hr = new Date().getHours();
 $('vardiya').value = hr<8?'00-08':hr<16?'08-16':'16-24';
 try{ $('calisan').value = localStorage.getItem('kasa_calisan')||''; }catch(e){}
-syncSeg();
-addPos(); calc(); renderHist(); sync();
+addPos(); restoreDraft(); calc(); renderHist(); sync();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
