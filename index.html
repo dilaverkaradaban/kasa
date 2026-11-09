@@ -76,6 +76,11 @@ input.flash{animation:fl 1.6s}
 .editBar[hidden]{display:none}
 #liveChips{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:0 12px}
 .lchip{background:#fff;color:#111;border:2px solid #fff;border-radius:10px;padding:10px 14px;font-size:1.15rem;font-weight:800}
+.note{border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:.85rem;font-weight:600}
+.note[hidden]{display:none}
+.note.ok{background:var(--okbg);color:var(--ok)}
+.note.warn{background:var(--plusbg);color:var(--plus)}
+.info{display:block;text-align:right;color:var(--mute);font-size:.8rem;margin:-4px 0 8px}
 </style>
 </head>
 <body>
@@ -86,14 +91,19 @@ input.flash{animation:fl 1.6s}
 <section>
   <div class="top">
     <label>Tarih<input type="date" id="tarih"></label>
-    <label>Vardiya<select id="vardiya"><option>00-08</option><option>08-16</option><option>16-24</option><option>12 saat gündüz</option><option>12 saat gece</option></select></label>
+    <label>Vardiya<select id="vardiya"><option>Var 1 (00-08)</option><option>Var 2 (08-16)</option><option>Var 3 (16-24)</option></select></label>
     <label class="full">Çalışan<select id="calisan"><option value="">Seçiniz</option><option>İ</option><option>T</option><option>D</option></select></label>
   </div>
 </section>
 
 <section>
-  <div class="row"><label for="oto">Oto</label><button class="small cam" type="button" data-for="oto" aria-label="Oto raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="oto" inputmode="decimal" placeholder="0,00"></div></div>
-  <div class="row"><label for="gaz">Gaz</label><button class="small cam" type="button" data-for="gaz" aria-label="Gaz raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="gaz" inputmode="decimal" placeholder="0,00"></div></div>
+  <div class="note" id="prevNote" hidden></div>
+  <div class="row"><label for="motorin">Motorin</label><button class="small cam" type="button" data-for="motorin" aria-label="Motorin raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="motorin" inputmode="decimal" placeholder="0,00"></div></div>
+  <small class="info" id="i_motorin"></small>
+  <div class="row"><label for="kursunsuz">Kurşunsuz</label><button class="small cam" type="button" data-for="kursunsuz" aria-label="Kurşunsuz raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="kursunsuz" inputmode="decimal" placeholder="0,00"></div></div>
+  <small class="info" id="i_kursunsuz"></small>
+  <div class="row"><label for="otogaz">Otogaz</label><button class="small cam" type="button" data-for="otogaz" aria-label="Otogaz raporunu fotoğrafla">📷</button><div class="num-wrap"><input class="num" id="otogaz" inputmode="decimal" placeholder="0,00"></div></div>
+  <small class="info" id="i_otogaz"></small>
   <div class="row"><label for="gelen">Gelen para</label><div class="num-wrap"><input class="num" id="gelen" inputmode="decimal" placeholder="0,00"></div></div>
   <div class="sub"><span>A (toplam)</span><span id="aTop">0,00</span></div>
 </section>
@@ -149,7 +159,7 @@ function parse(s){
   const v = parseFloat(s);
   return isNaN(v) ? 0 : v;
 }
-const names = ['oto','gaz','gelen','gider','veresiye','nakit'];
+const names = ['motorin','kursunsuz','otogaz','gelen','gider','veresiye','nakit'];
 function posVals(){ return [...document.querySelectorAll('.pos')].map(i=>i.value); }
 function addPos(v){
   const d = document.createElement('div'); d.className='row';
@@ -162,15 +172,50 @@ function addPos(v){
   $('posList').appendChild(d);
 }
 function renumber(){ document.querySelectorAll('#posList .row').forEach((r,i)=>{ r.querySelector('label').textContent='POS '+(i+1); }); }
+const FUELS=['motorin','kursunsuz','otogaz'];
+function shiftNo(v){ v=v||''; if(/Var\s*1|^00-08/.test(v)) return 1; if(/Var\s*2|^08-16/.test(v)) return 2; if(/Var\s*3|^16-24/.test(v)) return 3; return 0; }
+function normV(v){ return {'00-08':'Var 1 (00-08)','08-16':'Var 2 (08-16)','16-24':'Var 3 (16-24)'}[v]||v; }
+function setVardiya(v){
+  v=normV(v); const s=$('vardiya');
+  if(![...s.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.textContent=v; s.appendChild(o); }
+  s.value=v;
+}
+// hesap vardiya sonunda alındığı için 60 dk geriye bakılır: 08:05'te kapanan vardiya Var 1'dir, 00:10'da kapanan Var 3'tür (önceki gün)
+function shiftNow(){
+  const t=new Date(Date.now()-60*60000), h=t.getHours();
+  return {d:today(t), v:h<8?'Var 1 (00-08)':h<16?'Var 2 (08-16)':'Var 3 (16-24)'};
+}
+// aynı tarihte hemen bir önceki vardiyanın kaydı (X toplamları için)
+function prevRec(){
+  const n=shiftNo($('vardiya').value); if(n<2) return null;
+  const c=load().filter(k=>k.tarih===$('tarih').value&&shiftNo(k.vardiya)===n-1&&k.id!==editId);
+  if(!c.length) return null;
+  c.sort((a,b)=>(b.u||b.ts||0)-(a.u||a.ts||0));
+  const k=c.find(x=>x.d&&x.d.motorin!==undefined);
+  return k?{rec:k,ok:true}:{rec:c[0],ok:false};
+}
 function compute(){
   const g = k => parse($(k).value);
-  const a = g('oto')+g('gaz')+g('gelen');
+  const pr=prevRec(), net={};
+  FUELS.forEach(f=>{ net[f]=Math.round((g(f)-(pr&&pr.ok?parse(pr.rec.d[f]):0))*100)/100; });
+  const a = FUELS.reduce((s,f)=>s+net[f],0)+g('gelen');
   const pos = posVals().reduce((s,v)=>s+parse(v),0);
   const b = pos+g('gider')+g('veresiye')+g('nakit');
-  return {a,b,fark:Math.round((b-a)*100)/100};
+  return {a,b,fark:Math.round((b-a)*100)/100,net,pr};
+}
+function updInfo(r){
+  const n=shiftNo($('vardiya').value), nt=$('prevNote'), pr=r.pr;
+  FUELS.forEach(f=>{ const e=$('i_'+f); if(!e) return;
+    if(pr&&pr.ok){ e.textContent='Önceki X '+fmt(parse(pr.rec.d[f]))+' → vardiya '+fmt(r.net[f]); e.style.color=r.net[f]<0?'var(--bad)':''; }
+    else e.textContent=''; });
+  if(n<2){ nt.hidden=true; return; }
+  const pn='Var '+(n-1); nt.hidden=false;
+  if(pr&&pr.ok){ nt.className='note ok'; nt.textContent=pn+' kaydı bulundu: X toplamlarından otomatik fark alınıyor.'; }
+  else if(pr){ nt.className='note warn'; nt.textContent=pn+' kaydı eski biçimde, fark alınamıyor. Yazdığın X toplamları olduğu gibi kullanılıyor.'; }
+  else{ nt.className='note warn'; nt.textContent=pn+' bu tarihte kayıtlı değil. Yazdığın X toplamları olduğu gibi kullanılıyor (fark alınmıyor).'; }
 }
 function show(r, final){
-  $('aTop').textContent = fmt(r.a); $('bTop').textContent = fmt(r.b);
+  $('aTop').textContent = fmt(r.a); $('bTop').textContent = fmt(r.b); updInfo(r);
   const el = $('result');
   if(!final){ return; }
   let cls='ok', lbl='Kasa tutuyor', big=fmt(0);
@@ -200,10 +245,12 @@ function renderHist(){
 }
 $('hesapla').onclick = ()=>{
   if(!$('calisan').value){ alert('Önce çalışanı seç (İ, T, D).'); return; }
-  const r = compute(); show(r, true);
+  const r = compute();
+  if(FUELS.some(f=>r.net[f]<0)&&!confirm('Bir yakıtın vardiya satışı eksi çıktı (X toplamı önceki vardiyadan küçük). Yine de kaydedilsin mi?')) return;
+  show(r, true);
   const l = load();
-  const d={oto:$('oto').value,gaz:$('gaz').value,gelen:$('gelen').value,pos:posVals(),gider:$('gider').value,veresiye:$('veresiye').value,nakit:$('nakit').value};
-  const base={tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,d:d,s:false};
+  const d={motorin:$('motorin').value,kursunsuz:$('kursunsuz').value,otogaz:$('otogaz').value,gelen:$('gelen').value,pos:posVals(),gider:$('gider').value,veresiye:$('veresiye').value,nakit:$('nakit').value};
+  const base={tarih:$('tarih').value,vardiya:$('vardiya').value,calisan:$('calisan').value,a:r.a,b:r.b,fark:r.fark,d:d,n:r.net,pv:(r.pr&&r.pr.ok)?r.pr.rec.id:null,s:false};
   const ix=editId?l.findIndex(k=>k.id===editId):-1;
   if(ix>=0) l[ix]=Object.assign({},l[ix],base,{u:Date.now()});
   else l.push(Object.assign({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),ts:Date.now()},base));
@@ -215,12 +262,13 @@ $('hesapla').onclick = ()=>{
 $('yeni').onclick = ()=>{
   names.forEach(k=>$(k).value=''); $('posList').innerHTML=''; addPos();
   editId=null; setBanner(); hDone=false; try{ localStorage.removeItem('kasa_taslak'); }catch(e){}
-  $('tarih').value=today(); { const h=new Date().getHours(); $('vardiya').value=h<8?'00-08':h<16?'08-16':'16-24'; }
+  { const s0=shiftNow(); $('tarih').value=s0.d; $('vardiya').value=s0.v; }
   $('result').className=''; $('result').innerHTML='<div class="lbl">Hesap bekleniyor</div><div class="big">—</div>';
   calc(); window.scrollTo({top:0,behavior:'smooth'});
 };
 $('posAdd').onclick = ()=>{ addPos(); saveDraft(); };
 names.forEach(k=>$(k).addEventListener('input',calc));
+$('tarih').addEventListener('change',calc); $('vardiya').addEventListener('change',calc);
 // kamera
 let camTarget=null;
 function openCam(inp){ camTarget=inp; $('camFile').value=''; $('camFile').click(); }
@@ -435,17 +483,19 @@ function openRec(id){
     r.style.cssText='margin:0;padding:6px 0;border-top:0;border-bottom:1px dashed var(--line);font-weight:'+(bold?800:400);
     r.innerHTML='<span></span><span></span>'; r.children[0].textContent=a; r.children[1].textContent=v; b.appendChild(r); };
   const d=k.d;
-  if(d){ [['Oto','oto'],['Gaz','gaz'],['Gelen','gelen']].forEach(x=>row(x[0],fmt(parse(d[x[1]]))));
+  if(d){ if(d.oto!==undefined){ [['Oto','oto'],['Gaz','gaz']].forEach(x=>row(x[0],fmt(parse(d[x[1]])))); }
+    else [['Motorin','motorin'],['Kurşunsuz','kursunsuz'],['Otogaz','otogaz']].forEach(x=>{ row(x[0]+' X toplamı',fmt(parse(d[x[1]]))); if(k.pv&&k.n) row(x[0]+' vardiya satışı',fmt(k.n[x[1]])); });
+    row('Gelen',fmt(parse(d.gelen)));
     (d.pos||[]).forEach((v,i)=>row('POS '+(i+1),fmt(parse(v))));
     [['Gider','gider'],['Veresiye','veresiye'],['Nakit','nakit']].forEach(x=>row(x[0],fmt(parse(d[x[1]])))); }
   else b.innerHTML='<p class="empty">Bu eski kaydın kalem ayrıntıları yok.</p>';
   row('A',fmt(k.a),1); row('B',fmt(k.b),1); row('Fark',(k.fark>0?'+':k.fark<0?'−':'')+fmt(Math.abs(k.fark))+' ₺',1);
-  $('recEdit').disabled=!d; $('rec').hidden=false;
+  $('recEdit').disabled=!d||d.oto!==undefined; $('rec').hidden=false;
 }
 function startEdit(id){
-  const k=load().find(x=>x.id===id); if(!k||!k.d) return;
-  editId=id; $('tarih').value=k.tarih; $('vardiya').value=k.vardiya; $('calisan').value=k.calisan||'';
-  ['oto','gaz','gelen','gider','veresiye','nakit'].forEach(n=>{ $(n).value=k.d[n]||''; });
+  const k=load().find(x=>x.id===id); if(!k||!k.d||k.d.oto!==undefined) return;
+  editId=id; $('tarih').value=k.tarih; setVardiya(k.vardiya); $('calisan').value=k.calisan||'';
+  ['motorin','kursunsuz','otogaz','gelen','gider','veresiye','nakit'].forEach(n=>{ $(n).value=k.d[n]||''; });
   $('posList').innerHTML=''; (k.d.pos&&k.d.pos.length?k.d.pos:['']).forEach(v=>addPos(v));
   hDone=false; calc(); closeRec(); setBanner(); saveDraft(); window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -468,8 +518,8 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) sync(); 
 tokLbl();
 // taslak: form değerleri telefonda saklanır, uygulama arka planda kapansa da kaybolmaz
 let hDone=false;
-const DRAFT_F=['tarih','vardiya','calisan','oto','gaz','gelen','gider','veresiye','nakit'];
-function today(){ const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'); }
+const DRAFT_F=['tarih','vardiya','calisan','motorin','kursunsuz','otogaz','gelen','gider','veresiye','nakit'];
+function today(n){ n=n||new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'); }
 function saveDraft(){
   try{ const d={pos:posVals(),h:hDone,t:Date.now(),e:editId}; DRAFT_F.forEach(k=>d[k]=$(k).value); localStorage.setItem('kasa_taslak',JSON.stringify(d)); }catch(e){}
 }
@@ -477,7 +527,7 @@ function restoreDraft(){
   try{
     const d=JSON.parse(localStorage.getItem('kasa_taslak')||'null');
     if(!d||Date.now()-(d.t||0)>14*3600*1000) return;
-    DRAFT_F.forEach(k=>{ if(d[k]) $(k).value=d[k]; });
+    DRAFT_F.forEach(k=>{ if(d[k]) $(k).value=d[k]; }); if(d.vardiya) setVardiya(d.vardiya);
     $('posList').innerHTML=''; (d.pos&&d.pos.length?d.pos:['']).forEach(v=>addPos(v));
     editId=d.e||null; setBanner(); calc(); if(d.h){ hDone=true; show(compute(),true); }
   }catch(e){}
@@ -487,9 +537,7 @@ document.addEventListener('change',saveDraft);
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveDraft(); });
 window.addEventListener('pagehide',saveDraft);
 // init
-$('tarih').value = today();
-const hr = new Date().getHours();
-$('vardiya').value = hr<8?'00-08':hr<16?'08-16':'16-24';
+{ const s0=shiftNow(); $('tarih').value=s0.d; $('vardiya').value=s0.v; }
 try{ $('calisan').value = localStorage.getItem('kasa_calisan')||''; }catch(e){}
 addPos(); restoreDraft(); calc(); renderHist(); sync();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
